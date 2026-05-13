@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Imprimir Cuadrante</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .res-table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+        .res-table th, .res-table td { border: 1px solid #333; padding: 5px; text-align: center; vertical-align: top; }
+        .res-table th { background: #1e293b; color: white; }
+        .dia-col { background: #1e293b !important; color: white; font-weight: bold; width: 30px; }
+        .num-col { background: #f8fafc; width: 25px; }
+        .rotation-box { border-top: 1px dashed #999; margin-top: 5px; padding-top: 5px; }
+        .time-mark { font-size: 8px; color: #2563eb; font-weight: bold; display: block; }
+        .task-box { background: #fff3cd; padding: 4px; border-radius: 4px; font-size: 9px; color: #856404; }
+        .alert-skill { color: #d63031; font-weight: bold; font-size: 8px; }
+        h2 { text-align: center; margin-bottom: 10px; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+    <h2 id="titulo">Cargando...</h2>
+    <div id="contenido"></div>
+    <script src="print.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Urgencias Pro v12.7 - Extractor",
+  "version": "12.7",
+  "author": "Dan Chojrin",
+  "description": "Extractor de cuadrantes de aTurnos y Distribuidor de Urgencias",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": ["https://*.aturnos.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.aturnos.com/*"],
+      "js": ["extractor.js"]
+    }
+  ]
+}

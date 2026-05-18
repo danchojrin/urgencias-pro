@@ -24,7 +24,7 @@ function renderDB() {
     const tbody = document.getElementById('dbBody');
     if (!tbody) return;
     tbody.innerHTML = '';
-    const ids = Object.keys(masterStaff).sort((a,b) => masterStaff[a].nombre.localeCompare(masterStaff[b].nombre));
+    const ids = Object.keys(masterStaff).filter(id => !id.startsWith('XXX')).sort((a,b) => masterStaff[a].nombre.localeCompare(masterStaff[b].nombre));
     ids.forEach(id => {
         const p = masterStaff[id];
         const tr = document.createElement('tr');
@@ -149,26 +149,41 @@ function getCandidate(list, post, exclude = null) {
     return el;
 }
 
+function shortName(nombre) {
+    const parts = nombre.split(',');
+    if (parts.length >= 2) {
+        // "APELLIDO APELLIDO2, Nombre" → "APELLIDO, Nombre"
+        const apellido = parts[0].trim().split(/\s+/)[0];
+        const nom = parts[1].trim().split(/\s+/)[0];
+        return `${apellido}, ${nom}`;
+    }
+    // "Nombre APELLIDO1 APELLIDO2" → "Nombre APELLIDO1"
+    const words = nombre.trim().split(/\s+/);
+    return words.slice(0, 2).join(' ');
+}
+
 function renderP(p, post) {
     if(!p) return '-';
     const c = masterStaff[p.id] || {};
     let warn = "";
     if (post === 'tri1' && (!c.exp_urg || !c.form_trj)) warn = '<span class="alert-skill">⚠️ !Skill</span>';
     if ((post === 'tri2' || post === 'val2' || post === 'v2') && (!c.esp_ped && !c.exp_ped)) warn = '<span class="alert-skill">⚠️ !Esp</span>';
-    return `<div><b style="${warn?'color:var(--danger)':''}">${p.nombre.split(',')[0]}</b>${warn}</div>`;
+    return `<div><b style="${warn?'color:var(--danger)':''}">${shortName(p.nombre)}</b>${warn}</div>`;
 }
 
 function getDistribucionHTML(modoNoche) {
     historial = {};
     const year = currentMonthData.year;
     const month = currentMonthData.month;
-    let html = `<table class="res-table"><thead><tr><th class="dia-col">D</th><th class="num-col">N</th><th>T1</th><th>V1</th><th>V2</th><th>OBS</th>${!modoNoche?'<th>T2</th>':''}<th>ACTIVIDADES</th></tr></thead><tbody>`;
+    const turnoLabel = modoNoche ? 'TURNO NOCHE' : 'MAÑANA / TARDE';
+    let html = `<div style="text-align:center;font-weight:bold;font-size:0.85rem;margin-bottom:6px;letter-spacing:0.05em">${currentMonthData.label} — ${turnoLabel}</div><table class="res-table"><thead><tr><th class="dia-col">D</th><th class="num-col">N</th><th>T1</th><th>V1</th><th>V2</th><th>OBS</th>${!modoNoche?'<th>T2</th>':''}<th>ACTIVIDADES</th></tr></thead><tbody>`;
 
     for (let d = 0; d < 31; d++) {
         const date = new Date(year, month - 1, d + 1);
         if (date.getMonth() !== month - 1) break;
         const dayOfWeek = date.getDay();
         let working = currentData.filter(p => {
+            if (p.nombre.startsWith('XXX')) return false;
             let t = (p.turnos[d] || "").toUpperCase();
             const deBaja = t.includes('(-') || t.includes('BC') || t.includes('AL') || t.includes('PIH') || t.includes('PFA') || t.includes('BR');
             if (deBaja || t === 'V' || t === 'L' || !t || t.includes('DESCANSO')) return false;
@@ -194,6 +209,20 @@ function getDistribucionHTML(modoNoche) {
         let dIdx = 0, dests = modoNoche ? ['v1', 'obs', 'v2'] : ['v1', 'v2', 'obs'];
         while(pM.length > 0) { let e = pM.shift(); asM[dests[dIdx % dests.length]].push(e); dIdx++; }
 
+        // Enforce D/D1 rule: if a multi-person puesto has all D (10-22h), swap one for D1 (8-20h)
+        const enforceD1 = (arr, pool) => {
+            if (!Array.isArray(arr) || arr.length < 2) return;
+            if (arr.every(x => x.turnoCode === 'D')) {
+                const d1Idx = pool.findIndex(x => x.turnoCode === 'D1');
+                if (d1Idx === -1) return;
+                const d1 = pool.splice(d1Idx, 1)[0];
+                const replaced = arr.pop();
+                arr.push(d1);
+                pool.push(replaced);
+            }
+        };
+        enforceD1(asM.v1, pM); enforceD1(asM.v2, pM); enforceD1(asM.obs, pM);
+
         let asT = null;
         if (!modoNoche) {
             let pTardeTotal = working.filter(p => !p.turnoCode.startsWith('MM') && !p.turnoCode.startsWith('M'));
@@ -213,7 +242,7 @@ function getDistribucionHTML(modoNoche) {
                 } 
             };
             fill('tri1', [asM.tri1?.id, asM.tri2?.id].filter(x=>x), 1); fill('tri2', [asM.tri1?.id, asM.tri2?.id].filter(x=>x), 1);
-            fill('v2', null, 2); fill('v1', null, 2); fill('obs', null, 2);
+            fill('obs', null, 2); fill('v1', null, 2); fill('v2', null, 2);
             let dIdxT = 0; while(pPoolT.length > 0) { let e = pPoolT.shift(); asT[dests[dIdxT%3]].push(e); dIdxT++; }
         }
 
@@ -227,20 +256,40 @@ function getDistribucionHTML(modoNoche) {
             if(dayOfWeek === 4) tasks.push("📦 <b>Pedido Farmacia (M)</b><br>💊 <b>Colocar Farm. (T)</b>");
             if(dayOfWeek === 5) {
                 let pCarro = [...working]; let r = []; let seed = d + month + year; 
-                for(let i=0; i<2; i++) { if(pCarro.length>0) { let idx = (seed + i) % pCarro.length; r.push(pCarro[idx].nombre.split(',')[0]); pCarro.splice(idx,1); } }
+                for(let i=0; i<2; i++) { if(pCarro.length>0) { let idx = (seed + i) % pCarro.length; r.push(shortName(pCarro[idx].nombre)); pCarro.splice(idx,1); } }
                 tasks.push(`🚑 <b>Carro Paradas:</b><br><small style="color:#2563eb">${r.join(' / ')}</small>`);
             }
         }
 
-        let row = `<tr><td class="dia-col">${d+1}</td><td class="num-col">${working.length}</td>`;
-        const cell = (m, t, post) => {
+        const gc = v => Array.isArray(v) ? v.length : (v ? 1 : 0);
+        const short = (assigned, exp) => gc(assigned) < exp;
+        const shortM = { tri1: short(asM.tri1,1), v1: short(asM.v1,1), v2: short(asM.v2,1), obs: short(asM.obs,2), tri2: short(asM.tri2,1) };
+        const shortT = asT ? { tri1: short(asT.tri1,1), v1: short(asT.v1,1), v2: short(asT.v2,1), obs: short(asT.obs,2), tri2: short(asT.tri2,1) } : {};
+        const anyShort = Object.values(shortM).some(Boolean) || Object.values(shortT).some(Boolean);
+
+        const cellTd = (m, t, post, expCount) => {
+            const mShort = short(m, expCount);
+            const tShort = t !== undefined && short(t, expCount);
+            const cls = (mShort || tShort) ? ' class="shortage-cell"' : '';
             const mH = Array.isArray(m) ? m.map(x => renderP(x, post)).join('') : renderP(m, post);
-            if (!t) return mH;
+            if (t === undefined) return `<td${cls}><div class="morning-content">${mH}</div></td>`;
             const tH = Array.isArray(t) ? t.map(x => renderP(x, post)).join('') : renderP(t, post);
-            return `<div>${mH}</div><div class="rotation-box"><span class="time-mark">15:00h ➔</span>${tH}</div>`;
+            return `<td${cls}><div class="morning-content">${mH}</div><div class="rotation-box"><span class="time-mark">15:00h ➔</span>${tH}</div></td>`;
         };
-        if (modoNoche) { row += `<td>${renderP(asM.tri1, 'tri1')}</td><td>${asM.v1.map(x=>renderP(x,'v1')).join('')}</td><td>${asM.v2.map(x=>renderP(x,'v2')).join('')}</td><td>${asM.obs.map(x=>renderP(x,'obs')).join('')}</td>`;
-        } else { row += `<td>${cell(asM.tri1, asT.tri1, 'tri1')}</td><td>${cell(asM.v1, asT.v1, 'v1')}</td><td>${cell(asM.v2, asT.v2, 'v2')}</td><td>${cell(asM.obs, asT.obs, 'obs')}</td><td>${cell(asM.tri2, asT.tri2, 'tri2')}</td>`; }
+
+        let row = `<tr><td class="dia-col">${d+1}</td><td class="num-col${anyShort?' shortage-num':''}">${working.length}</td>`;
+        if (modoNoche) {
+            row += cellTd(asM.tri1, undefined, 'tri1', 1);
+            row += cellTd(asM.v1, undefined, 'v1', 1);
+            row += cellTd(asM.v2, undefined, 'v2', 1);
+            row += cellTd(asM.obs, undefined, 'obs', 2);
+        } else {
+            row += cellTd(asM.tri1, asT.tri1, 'tri1', 1);
+            row += cellTd(asM.v1, asT.v1, 'v1', 1);
+            row += cellTd(asM.v2, asT.v2, 'v2', 1);
+            row += cellTd(asM.obs, asT.obs, 'obs', 2);
+            row += cellTd(asM.tri2, asT.tri2, 'tri2', 1);
+        }
         row += `<td>${tasks.length ? `<div class="task-box">${tasks.join('')}</div>` : ''}</td></tr>`;
         html += row;
     }

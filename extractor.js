@@ -1,5 +1,5 @@
 // Extractor v12.7 - Soporte para Bajas e Incidencias
-console.log("Urgencias Pro: Extractor v12.7 activado");
+console.log("Urgencias Pro: Extractor v13.0 activado");
 
 async function extraerDatos() {
   console.log("Iniciando extracción...");
@@ -87,10 +87,24 @@ async function extraerDatos() {
   }
 
   window.scrollTo(0, 0);
+
+  // Extraer mes del th con colspan="31" y año de data-date
+  let mesTexto = "";
+  const thMes = document.querySelector('th[colspan="31"]');
+  if (thMes) {
+    const nombreMes = thMes.innerText.trim();
+    const dateEl = document.querySelector("[data-date]");
+    const anio = dateEl
+      ? dateEl.dataset.date.substring(0, 4)
+      : new Date().getFullYear();
+    mesTexto = `${nombreMes.toUpperCase()} ${anio}`;
+  }
+  if (!mesTexto) mesTexto = document.title;
+
   return {
     exito: true,
     personal: Array.from(listaFinal.values()),
-    mes: document.title,
+    mes: mesTexto,
   };
 }
 

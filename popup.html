@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Urgencias Pro v12.7 - Extractor</title>
+    <title>Urgencias Pro v13.0 - Extractor</title>
     <style>
       :root {
         --primary: #2563eb;
@@ -17,8 +17,8 @@
         margin: 0;
         background: var(--bg);
         color: #2d3436;
-        min-width: 850px;
-        min-height: 600px;
+        width: 900px;
+        min-height: 500px;
       }
       header {
         background: #1e293b;
@@ -30,6 +30,7 @@
       }
       .container {
         padding: 1rem;
+        overflow-x: auto;
       }
       .nav-steps {
         display: flex;
@@ -112,21 +113,31 @@
         border-collapse: collapse;
         font-size: 0.65rem;
         table-layout: fixed;
-        border: 1px solid #333;
+        border: 2px solid #333;
       }
       .res-table th {
         background: #1e293b;
         color: white;
         padding: 4px;
-        border: 1px solid #333;
+        border: 2px solid #333;
         font-size: 0.55rem;
       }
       .res-table td {
-        border: 1px solid #333;
+        border: 2px solid #333;
         padding: 3px;
         text-align: center;
         background: white;
         vertical-align: top;
+      }
+      .morning-content {
+        min-height: 2.4em;
+      }
+      .shortage-cell {
+        background-color: #ffff00 !important;
+      }
+      .shortage-num {
+        background-color: #ffff00 !important;
+        color: #333 !important;
       }
       .dia-col {
         background: #1e293b !important;
@@ -188,6 +199,9 @@
         .res-table {
           font-size: 6px;
         }
+        .alert-skill {
+          display: none !important;
+        }
       }
     </style>
   </head>
@@ -195,7 +209,7 @@
     <header class="no-print">
       <div style="display: flex; align-items: center; gap: 8px">
         <span style="font-size: 1.2rem">🏥</span>
-        <h2 style="margin: 0; font-size: 0.9rem">Urgencias Pro v12.7</h2>
+        <h2 style="margin: 0; font-size: 0.9rem">Urgencias Pro v13.0</h2>
       </div>
       <button class="btn btn-success" id="btnSinc">
         ⚡ Importar de aTurnos

@@ -1,4 +1,4 @@
-// Extractor v12.7 - Soporte para Bajas e Incidencias
+// Extractor v13.0 - Soporte para Bajas e Incidencias
 console.log("Urgencias Pro: Extractor v13.0 activado");
 
 async function extraerDatos() {

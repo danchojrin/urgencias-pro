@@ -2,6 +2,9 @@
 .DS_Store
 Thumbs.db
 
+# Copias de seguridad de la app (contienen nombres de la plantilla): nunca al repo
+urgencias-pro-copia-*.json
+
 # Otros
 *.log
 .vscode/

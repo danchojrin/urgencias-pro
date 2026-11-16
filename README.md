@@ -20,10 +20,10 @@
 - **Mínimos** (en `core.js`, `MINIMOS`): mañana y tarde 2 triage · 2 valoración · 2 observación; noche 1 · 2 · 2; noche de julio y agosto 1 · 2 · 1.
 - **Si falta personal** se cubre en este orden: T1 › V2 › OBS › V1 › OBS › T2. Con 5 personas: 1 triage, 2 valoración, 2 observación; con 4: 1 · 2 · 1. Lo que queda sin cubrir sale en amarillo.
 - **Para cada puesto** se elige por este orden: puesto fijo › aptitud (T1: urgencias + formación en triage; T2/V2: pediatría) › en V2, especialista antes que solo experiencia › la pediatría se reserva para V2/T2 (a adultos solo si no hay alternativa) › regla D/D1 (ningún puesto de varias personas todo con "D", que entra a las 10) › **equidad** (menor proporción histórica de ese grupo de puesto) › desempate reproducible.
-- **Rotación de las 15 h**: quien hizo triage por la mañana no repite por la tarde. "Rotar = No" mantiene a la persona en su puesto todo el día.
+- **Rotación de las 15 h**: quien hizo triage por la mañana no repite por la tarde. Quien está en **observación** por la mañana se queda ahí por la tarde (conoce a los pacientes), salvo que V2 se quedaría sin pediatría. "Rotar = No" mantiene a la persona en su puesto todo el día.
 - **Histórico**: se guarda por mes y se usa los meses siguientes. Los días con puesto fijo no cuentan (al dejar el fijo se vuelve a la media). Un import incompleto no se guarda.
 - **Por qué**: al pasar el ratón por un nombre del cuadrante se ve el criterio que decidió esa asignación.
-- **Carro de paradas** (y tareas con personas): sale quien menos veces lo ha hecho respecto a los días que estaba disponible.
+- **Tareas**: Carro de paradas lunes por la mañana y viernes por la tarde; cada tarea con personas tiene selector de franja (todo el día, solo mañana, solo tarde) y sale quien menos veces la ha hecho respecto a los días que estaba disponible.
 
 El código es abierto: los puestos, mínimos y tareas se pueden adaptar en `core.js`.
 

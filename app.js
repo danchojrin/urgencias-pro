@@ -56,7 +56,11 @@ function confirmar(btn, clave, textoConfirm, accion) {
   const r = await chrome.storage.local.get(["masterStaff", "historialMeses", "tareasCfg", "ultimoImport"]);
   masterStaff = r.masterStaff || {};
   historialMeses = r.historialMeses || {};
-  if (r.tareasCfg) tareasCfg = r.tareasCfg;
+  if (r.tareasCfg) {
+    // Config de versiones anteriores (farmacia, carro del viernes): se actualiza y se vuelve a guardar
+    tareasCfg = Core.migrarTareas(r.tareasCfg);
+    guardarTareas();
+  }
   if (r.ultimoImport) {
     const original = r.ultimoImport.personal || [];
     currentData = minimizar(original);
@@ -86,7 +90,7 @@ chrome.storage.onChanged.addListener((cambios, area) => {
     if (propias[k] && propias[k].delete(j)) continue; // eco de lo que escribió esta misma pestaña
     if (k === "masterStaff") masterStaff = cambios[k].newValue || {};
     if (k === "historialMeses") historialMeses = cambios[k].newValue || {};
-    if (k === "tareasCfg") tareasCfg = cambios[k].newValue || JSON.parse(JSON.stringify(Core.TAREAS_DEFECTO));
+    if (k === "tareasCfg") tareasCfg = Core.migrarTareas(cambios[k].newValue);
     repintar = true;
   }
   if (repintar) {
@@ -212,6 +216,10 @@ function renderTareas() {
     } else {
       controles = DIAS_SEMANA.map((d) => `<button class="dia-btn ${(t.dias || []).includes(d.n) ? "on" : ""}" data-i="${i}" data-dia="${d.n}">${d.l}</button>`).join("");
       if (t.personas) controles += `<label class="hint" style="margin-left:10px">personas <input type="number" min="1" max="6" value="${t.personas}" data-i="${i}" data-act="personas" style="width:44px"></label>`;
+      if (t.personas && t.turno === "D") {
+        const opciones = [["D", "Todo el día"], ["M", "Solo mañana"], ["T", "Solo tarde"]];
+        controles += `<select data-i="${i}" data-act="franja" style="margin-left:10px;font-size:0.75rem">${opciones.map(([v, l]) => `<option value="${v}" ${(t.franja || "D") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+      }
     }
     row.innerHTML = `<span class="nombre">${esc(t.icono)} ${esc(t.nombre)}</span><span class="turno">${turno}</span><span>${controles}</span>`;
     cont.appendChild(row);
@@ -232,6 +240,13 @@ function renderTareas() {
       t.activa = t.activa === false;
       guardarTareas();
       renderTareas();
+      invalidarResultado("Tareas cambiadas: pulsa Generar para ver el cuadrante actualizado");
+    };
+  });
+  cont.querySelectorAll("[data-act=franja]").forEach((sel) => {
+    sel.onchange = () => {
+      tareasCfg[+sel.dataset.i].franja = sel.value;
+      guardarTareas();
       invalidarResultado("Tareas cambiadas: pulsa Generar para ver el cuadrante actualizado");
     };
   });
@@ -378,12 +393,11 @@ function htmlTabla(modoNoche) {
 $("btnImprimir").onclick = () => {
   if (!resultado) return;
   const label = mesActual.label || "Cuadrante";
-  guardar({
-    print_payload: { titulo: `DIURNO - ${label}`, html: htmlTabla(false) },
-    print_payload_noche: { titulo: `NOCHE - ${label}`, html: htmlTabla(true) },
-  }).then(() => {
-    chrome.tabs.create({ url: chrome.runtime.getURL("print.html?type=payload"), active: false });
-    chrome.tabs.create({ url: chrome.runtime.getURL("print.html?type=payload_noche"), active: true });
+  // Un solo documento con diurno y noche, cada uno en su hoja. Antes eran dos pestañas y la de
+  // diurno, en segundo plano, no llegaba a imprimirse: la noche se perdía.
+  const html = htmlTabla(false) + '<div class="salto-pagina"></div>' + htmlTabla(true);
+  guardar({ print_payload: { titulo: `Cuadrante — ${label}`, html } }).then(() => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("print.html?type=payload"), active: true });
   });
 };
 

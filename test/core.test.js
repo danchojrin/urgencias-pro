@@ -182,29 +182,82 @@ test("usuarios XXX se ignoran", () => {
 // ---------- Tareas configurables ----------
 const diasConTarea = (r, modo, texto) => r[modo].filter((d) => d.tareas.some((x) => x.includes(texto))).map((d) => d.dow);
 
-test("tareas por defecto: farmacia lunes y jueves, carro viernes; noche domingo y miércoles", () => {
-  assert.deepStrictEqual([...new Set(diasConTarea(res, "diurno", "Colocar Farmacia"))], [1]);
-  assert.deepStrictEqual([...new Set(diasConTarea(res, "diurno", "Pedido Farmacia (M)"))], [4]);
-  assert.deepStrictEqual([...new Set(diasConTarea(res, "diurno", "Carro Paradas"))], [5]);
-  assert.deepStrictEqual([...new Set(diasConTarea(res, "noche", "Pedido Farmacia"))], [0]);
+// Pedido del equipo: sin tareas de farmacia; carro de paradas lunes por la mañana y viernes por la tarde.
+test("tareas por defecto: sin farmacia; carro lunes mañana y viernes tarde; noche miércoles", () => {
+  assert.ok(!C.TAREAS_DEFECTO.some((t) => /farmacia|farm\./i.test(t.nombre)), "queda alguna tarea de farmacia");
+  assert.deepStrictEqual([...new Set(diasConTarea(res, "diurno", "Carro Paradas (mañana)"))], [1]);
+  assert.deepStrictEqual([...new Set(diasConTarea(res, "diurno", "Carro Paradas (tarde)"))], [5]);
   assert.deepStrictEqual([...new Set(diasConTarea(res, "noche", "Ok Desf/Carro"))], [3]);
 });
 
-test("tareas configurables: carro de paradas movido a martes y 3 personas; farmacia sin días", () => {
-  const tareas = C.TAREAS_DEFECTO.map((t) =>
-    t.id === "carro_paradas" ? { ...t, dias: [2], personas: 3 } : t.id === "farm_colocar" ? { ...t, dias: [] } : t
-  );
-  const r = C.generarMes({ personal, perfiles, year: 2026, month: 11, tareas });
-  assert.deepStrictEqual([...new Set(diasConTarea(r, "diurno", "Carro Paradas"))], [2]);
-  assert.deepStrictEqual(diasConTarea(r, "diurno", "Colocar Farmacia"), []);
-  const dia = r.diurno.find((d) => d.tareas.some((x) => x.includes("Carro Paradas")));
-  const nombres = dia.tareas.find((x) => x.includes("Carro Paradas")).split("<small")[1].split(">")[1].split("<")[0].split(" / ");
-  assert.strictEqual(nombres.length, 3);
+// Cada persona del carro tiene que trabajar en esa franja: el de la mañana sale de quien está por la
+// mañana (no de quien solo hace tarde), y el de la tarde, de quien está por la tarde.
+test("carro por franja: la mañana solo elige a quien trabaja por la mañana; la tarde, a quien trabaja por la tarde", () => {
+  const cortos = C.nombresCortos(personal.map((p) => p.nombre));
+  const nombresDe = (texto) => texto.split("<small")[1].split(">")[1].split("<")[0].split(" / ");
+  const dedicadas = (bloques) => new Set(bloques.map((b) => cortos.get(b.nombre) || C.nombreCorto(b.nombre)));
+  let cM = 0, cT = 0;
+  for (const dia of res.diurno) {
+    const txtM = dia.tareas.find((x) => x.includes("Carro Paradas (mañana)"));
+    const txtT = dia.tareas.find((x) => x.includes("Carro Paradas (tarde)"));
+    if (txtM) {
+      cM++;
+      const manana = new Set(dia.M ? [dia.M.tri1, dia.M.tri2, ...asArr(dia.M.v1), ...asArr(dia.M.v2), ...asArr(dia.M.obs)].filter(Boolean).map((x) => cortos.get(x.nombre) || C.nombreCorto(x.nombre)) : []);
+      for (const n of nombresDe(txtM)) assert.ok(manana.has(n), `carro de mañana: ${n} no trabaja por la mañana (día ${dia.dia})`);
+    }
+    if (txtT) {
+      cT++;
+      const tarde = new Set(dia.T ? [dia.T.tri1, dia.T.tri2, ...asArr(dia.T.v1), ...asArr(dia.T.v2), ...asArr(dia.T.obs)].filter(Boolean).map((x) => cortos.get(x.nombre) || C.nombreCorto(x.nombre)) : []);
+      for (const n of nombresDe(txtT)) assert.ok(tarde.has(n), `carro de tarde: ${n} no trabaja por la tarde (día ${dia.dia})`);
+    }
+  }
+  assert.ok(cM > 0 && cT > 0, `pocos días: lunes ${cM}, viernes ${cT}`);
 });
 
-test("tareas: un mismo día puede tener varias (jueves: pedido + colocar tarde)", () => {
-  const jueves = res.diurno.find((d) => d.dow === 4);
-  assert.ok(jueves.tareas.length >= 2);
+test("tareas configurables: carro movido a martes con 3 personas", () => {
+  const tareas = C.TAREAS_DEFECTO.map((t) => (t.id === "carro_paradas" ? { ...t, dias: [2], personas: 3 } : t));
+  const r = C.generarMes({ personal, perfiles, year: 2026, month: 11, tareas });
+  assert.deepStrictEqual([...new Set(diasConTarea(r, "diurno", "Carro Paradas (mañana)"))], [2]);
+  const dia = r.diurno.find((d) => d.tareas.some((x) => x.includes("Carro Paradas (mañana)")));
+  assert.strictEqual(dia.tareas.find((x) => x.includes("Carro Paradas (mañana)")).split("<small")[1].split(">")[1].split("<")[0].split(" / ").length, 3);
+});
+
+// Configuración guardada antes de esta versión: sin farmacia, carro con su franja nueva y lo que la
+// persona hubiera cambiado (días de otras tareas, caducidad desactivada) se conserva.
+test("migrarTareas: quita farmacia, pasa el carro a lunes mañana / viernes tarde y conserva cambios", () => {
+  const vieja = [
+    { id: "farm_colocar", icono: "💊", nombre: "Colocar Farmacia", turno: "D", dias: [1] },
+    { id: "carro_paradas", icono: "🚑", nombre: "Carro Paradas", turno: "D", dias: [5], personas: 2 },
+    { id: "desf_carro_n", icono: "🩺", nombre: "Ok Desf/Carro", turno: "N", dias: [2] },
+    { id: "caducidad", icono: "📆", nombre: "Caducidad", turno: "N", tipo: "caducidad", activa: false },
+  ];
+  const m = C.migrarTareas(vieja);
+  assert.deepStrictEqual(m.map((t) => t.id), C.TAREAS_DEFECTO.map((t) => t.id));
+  assert.deepStrictEqual(m.find((t) => t.id === "carro_paradas").dias, [1]);
+  assert.strictEqual(m.find((t) => t.id === "carro_paradas").franja, "M");
+  assert.deepStrictEqual(m.find((t) => t.id === "desf_carro_n").dias, [2]);
+  assert.strictEqual(m.find((t) => t.id === "caducidad").activa, false);
+});
+
+test("migrarTareas: una configuración ya nueva conserva los cambios de la persona (carro de tarde a martes)", () => {
+  const nueva = C.TAREAS_DEFECTO.map((t) => (t.id === "carro_paradas_t" ? { ...t, dias: [2], personas: 3 } : t));
+  const m = C.migrarTareas(nueva);
+  const ct = m.find((t) => t.id === "carro_paradas_t");
+  assert.deepStrictEqual(ct.dias, [2]);
+  assert.strictEqual(ct.personas, 3);
+  assert.strictEqual(ct.franja, "T");
+});
+
+test("migrarTareas: sin datos guardados devuelve los valores por defecto", () => {
+  assert.deepStrictEqual(C.migrarTareas(undefined), C.TAREAS_DEFECTO);
+  assert.deepStrictEqual(C.migrarTareas(null), C.TAREAS_DEFECTO);
+});
+
+test("tareas: un mismo día puede tener varias (lunes: carro de mañana + carro de tarde)", () => {
+  const tareas = C.TAREAS_DEFECTO.map((t) => (t.id === "carro_paradas_t" ? { ...t, dias: [1] } : t));
+  const r = C.generarMes({ personal, perfiles, year: 2026, month: 11, tareas });
+  const lunes = r.diurno.find((d) => d.dow === 1);
+  assert.ok(lunes.tareas.length >= 2, "el lunes no tiene dos tareas");
 });
 
 // ---------- Prioridad de especialidad ----------
@@ -246,25 +299,32 @@ test("pediatría: V2 siempre con pediatría si alguien de pediatría trabaja; T2
   assert.ok(cV2 > 20 && cT2 > 5, `pocos casos: V2 ${cV2}, T2 ${cT2}`);
 });
 
-test("pediatría: en V2 va antes la especialista que quien solo tiene experiencia", () => {
+// Actualizado (decisión del equipo): V2 puede quedar sin especialista por la tarde si tiene a alguien
+// con experiencia en pediatría. Lo que no puede pasar es V2 sin pediatría habiéndola en el bloque.
+// Se sigue midiendo que la especialista vaya a V2 con frecuencia (preferencia).
+test("pediatría: V2 con pediatría (especialista o experiencia) siempre que haya en el bloque; especialista preferida", () => {
   const pf = perfilesVacios(personal);
   const esp = personal.slice(10, 14).map((p) => p.nombre);
   const exp = personal.slice(14, 20).map((p) => p.nombre);
   esp.forEach((n) => Object.assign(pf[n], { esp_ped: true }));
   exp.forEach((n) => Object.assign(pf[n], { exp_ped: true }));
+  const ped = [...esp, ...exp];
   const r = C.generarMes({ personal, perfiles: pf, year: 2026, month: 11 });
-  let c = 0;
+  let c = 0, conEsp = 0;
   for (const modo of ["diurno", "noche"]) {
     for (const dia of r[modo]) {
       for (const b of [dia.M, dia.T].filter(Boolean)) {
-        if (ids(b).some((id) => esp.includes(id))) {
+        if (ids(b).some((id) => ped.includes(id))) {
           c++;
-          assert.ok(b.v2.some((x) => esp.includes(x.id)), `V2 sin especialista habiéndola (${modo} día ${dia.dia})`);
+          assert.ok(b.v2.some((x) => ped.includes(x.id)), `V2 sin pediatría habiéndola (${modo} día ${dia.dia})`);
+          if (b.v2.some((x) => esp.includes(x.id))) conEsp++;
         }
       }
     }
   }
   assert.ok(c > 10);
+  // Referencia medida (synthetic seed 1): 65 % en la versión anterior, 64 % ahora. Umbral 60 % para no fallar por ruido.
+  assert.ok(conEsp / c >= 0.6, `V2 con especialista solo en ${Math.round((100 * conEsp) / c)} % de los bloques`);
 });
 
 // ---------- Imparcialidad ----------
@@ -634,6 +694,24 @@ test("copia de seguridad: conserva las cuentas de tareas", () => {
   const r = C.validarCopia({ version: 1, masterStaff: {}, historialMeses: { "2026-10": { A: { _d: 3, tarea_carro_paradas: 1, tareaDisp_carro_paradas: 2, raro: 5 } } } });
   assert.ok(r.ok, r.error);
   assert.deepStrictEqual(r.datos.historialMeses["2026-10"].A, { _d: 3, tarea_carro_paradas: 1, tareaDisp_carro_paradas: 2 });
+});
+
+// Pedido del equipo: en observación no se rota. Quien trabaja 12 h y estaba en observación por la mañana
+// sigue en observación por la tarde (sin pediatría en el cuadrante, nadie sale de ahí).
+test("observación no rota: quien está de 12 h en observación por la mañana sigue ahí por la tarde", () => {
+  const r = C.generarMes({ personal, perfiles: perfilesVacios(personal), year: 2026, month: 11 });
+  let c = 0;
+  for (const dia of r.diurno) {
+    if (!dia.T) continue;
+    const obsTarde = ids({ obs: dia.T.obs || [] });
+    for (const p of asArr(dia.M.obs)) {
+      if (p.franja !== "MT") continue;
+      c++;
+      assert.ok(obsTarde.includes(p.id), `${p.id} sale de observación a las 15 h (día ${dia.dia})`);
+      assert.ok(/observación: no rota/.test(dia.T.obs.find((x) => x.id === p.id).motivo || ""), `motivo ausente (día ${dia.dia})`);
+    }
+  }
+  assert.ok(c > 20, `pocos casos: ${c}`);
 });
 
 console.log(`\n${pasados} pasados, ${fallos.length} fallos`);

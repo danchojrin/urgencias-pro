@@ -29,6 +29,11 @@ const fila = (nombre, code) => ({ nombre, turnos: Array(N).fill(code) });
 const almacen = {
   ultimoImport: { mes: { year: 2026, month: 11, label: "NOVIEMBRE 2026" }, personal: [fila("VIEJO, IMPORT", "D1(-BM)")] },
   masterStaff: { "GARCIA LOPEZ, MARIA JOSE": { nombre: "GARCIA LOPEZ, MARIA JOSE", esp_ped: true, rotar: "si" } },
+  // Configuración de tareas de una versión anterior: se migra al arrancar
+  tareasCfg: [
+    { id: "farm_colocar", icono: "💊", nombre: "Colocar Farmacia", turno: "D", dias: [1] },
+    { id: "carro_paradas", icono: "🚑", nombre: "Carro Paradas", turno: "D", dias: [5], personas: 2 },
+  ],
 };
 const guardados = [];
 const oyentes = [];
@@ -52,7 +57,7 @@ const chrome = {
     query: async () => [{ id: 7, windowId: 1, url: "https://x.aturnos.com/table_fusion" }],
     getCurrent: async () => ({ id: 3, windowId: 2 }),
     update: async (id, o) => llamadas.push(`tab ${id} ${JSON.stringify(o)}`),
-    create() {},
+    create: async (o) => llamadas.push(`crear ${o.url}`),
   },
   windows: { update: async (id, o) => llamadas.push(`win ${id} ${JSON.stringify(o)}`) },
   scripting: {
@@ -66,7 +71,7 @@ const chrome = {
 const ctx = vm.createContext({ document, chrome, UrgenciasCore: Core, console, setTimeout, clearTimeout, URL, Blob: class {}, JSON });
 vm.runInContext(
   fs.readFileSync(RAIZ + "app.js", "utf8") +
-    "\n;globalThis.__app = { importar, generar, htmlTabla, get currentData(){return currentData}, get mesActual(){return mesActual}, get historialMeses(){return historialMeses}, get masterStaff(){return masterStaff} };",
+    "\n;globalThis.__app = { importar, generar, htmlTabla, get currentData(){return currentData}, get mesActual(){return mesActual}, get historialMeses(){return historialMeses}, get masterStaff(){return masterStaff}, get tareasCfg(){return tareasCfg} };",
   ctx
 );
 const esperar = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -127,6 +132,26 @@ const ok = (cond, msg) => {
   respuestaExtractor = { error: "fallo simulado" };
   await app.importar();
   ok(/fallo simulado/.test(els.status.textContent), "error del extractor llega al usuario");
+
+  // 5) Impresión: diurno y noche en un solo documento, y pie "Hecho por Protocolovital.es"
+  respuestaExtractor = { exito: true, personal, grupos: {}, homonimos: [], esperados: 13, cargados: 13, mes_num: 11, anio: 2026 };
+  await app.importar();
+  app.generar();
+  await esperar();
+  els.btnImprimir.onclick();
+  await esperar();
+  const imp = guardados.filter((g) => g.print_payload).pop();
+  ok(imp && /MAÑANA \/ TARDE/.test(imp.print_payload.html) && /TURNO NOCHE/.test(imp.print_payload.html), "impresión: diurno y noche en el mismo documento");
+  ok(imp && /salto-pagina/.test(imp.print_payload.html), "impresión: noche en hoja aparte");
+  ok(llamadas.some((l) => l === "crear " + "print.html?type=payload") && !llamadas.some((l) => /payload_noche/.test(l)), "impresión: una sola pestaña");
+  const pie = "Hecho por Protocolovital.es";
+  const fs2 = require("fs");
+  ok(fs2.readFileSync(RAIZ + "app.html", "utf8").includes(pie) && fs2.readFileSync(RAIZ + "print.html", "utf8").includes(pie), "pie en la app y en la impresión");
+
+  // 6) Tareas: la configuración antigua se migra al arrancar y el selector de franja aparece
+  ok(!app.tareasCfg.some((t) => /Farmacia/.test(t.nombre)), "arranque: sin tareas de farmacia");
+  ok(app.tareasCfg.some((t) => t.id === "carro_paradas" && t.franja === "M" && t.dias[0] === 1), "arranque: carro de lunes por la mañana");
+  ok(els.tareasBody.children.some((r) => /data-act="franja"/.test(r.innerHTML)), "tareas con personas: selector de franja en pantalla");
 
   console.log(`\n${pasados} pasados, ${fallos} fallos`);
   process.exit(fallos ? 1 : 0);

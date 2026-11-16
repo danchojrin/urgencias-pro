@@ -1,8 +1,6 @@
-const urlParams = new URLSearchParams(window.location.search);
-const payloadKey = urlParams.get('type') === 'payload_noche' ? 'print_payload_noche' : 'print_payload';
-
-chrome.storage.local.get([payloadKey], (result) => {
-    const data = result[payloadKey];
+// Un único documento: diurno y noche (ver btnImprimir en app.js)
+chrome.storage.local.get(['print_payload'], (result) => {
+    const data = result.print_payload;
     if (data) {
         document.getElementById('titulo').innerText = data.titulo;
         document.getElementById('contenido').innerHTML = data.html;

@@ -16,15 +16,32 @@
   };
   // Tareas sistemáticas. dias: 0=domingo ... 6=sábado. turno: "D" diurno, "N" noche.
   // personas: si se indica, se sortean esas personas del turno (ej. carro de paradas).
+  // franja (solo con personas, turno D): "M" solo quien trabaja por la mañana, "T" solo por la tarde,
+  // "D" cualquiera de la jornada.
   const TAREAS_DEFECTO = [
-    { id: "farm_colocar", icono: "💊", nombre: "Colocar Farmacia", turno: "D", dias: [1] },
-    { id: "farm_pedido_m", icono: "📦", nombre: "Pedido Farmacia (M)", turno: "D", dias: [4] },
-    { id: "farm_colocar_t", icono: "💊", nombre: "Colocar Farm. (T)", turno: "D", dias: [4] },
-    { id: "carro_paradas", icono: "🚑", nombre: "Carro Paradas", turno: "D", dias: [5], personas: 2 },
-    { id: "farm_pedido_n", icono: "📦", nombre: "Pedido Farmacia", turno: "N", dias: [0] },
+    { id: "carro_paradas", icono: "🚑", nombre: "Carro Paradas", turno: "D", dias: [1], personas: 2, franja: "M" },
+    { id: "carro_paradas_t", icono: "🚑", nombre: "Carro Paradas", turno: "D", dias: [5], personas: 2, franja: "T" },
     { id: "desf_carro_n", icono: "🩺", nombre: "Ok Desf/Carro", turno: "N", dias: [3] },
     { id: "caducidad", icono: "📆", nombre: "Caducidad", turno: "N", tipo: "caducidad", activa: true },
   ];
+  const FRANJAS_TAREA = ["D", "M", "T"];
+
+  // Configuración guardada en el navegador (versión anterior incluida): conserva lo que cada persona
+  // haya cambiado (días, personas, activa, franja) y añade lo nuevo. Quita tareas que ya no existen
+  // (farmacia). Si una tarea con franja no la tenía guardada, es de la versión anterior: se usa el valor nuevo.
+  function migrarTareas(guardadas) {
+    const lista = Array.isArray(guardadas) ? guardadas.filter((t) => t && typeof t === "object") : [];
+    return TAREAS_DEFECTO.map((def) => {
+      const r = JSON.parse(JSON.stringify(def));
+      const t = lista.find((x) => x.id === def.id);
+      if (!t || (def.franja && !FRANJAS_TAREA.includes(t.franja))) return r;
+      if (Array.isArray(t.dias)) r.dias = t.dias.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6);
+      if (def.personas && t.personas) r.personas = Math.max(1, Math.min(6, parseInt(t.personas, 10) || 1));
+      if (t.activa !== undefined && def.tipo === "caducidad") r.activa = t.activa !== false;
+      if (def.franja) r.franja = t.franja;
+      return r;
+    });
+  }
   const esVerano = (m) => VERANO_MESES.includes(m);
   const minimosNoche = (m) => (esVerano(m) ? MINIMOS.nocheVerano : MINIMOS.noche);
 
@@ -387,15 +404,33 @@
         asT = vacio();
         const tardeTodos = working.filter((p) => p.franja !== "M"); // solo-mañana no rota a las 15 h
         let poolT = [...tardeTodos];
-        // rotar = no: sigue por la tarde en su puesto de la mañana
+        // Observación no rota: quien trabaja 12 h allí prefiere quedarse (conoce a los pacientes).
+        // Excepción: V2 puede quedar sin especialista si tiene a alguien con experiencia en pediatría,
+        // pero no sin pediatría. Si por la tarde V2 se quedaría sin nadie de pediatría y el resto
+        // tampoco puede cubrirla, sale de observación a V2 la de pediatría más formada (con rotar = sí).
+        const quedanT = (p) => tardeTodos.some((x) => x.id === p.id);
+        const pedia = (p) => nivelPed(perfil(p.id)) > 0;
+        const v2FijaPed = asArr(asM.v2).some((p) => perfil(p.id).rotar === "no" && pedia(p) && quedanT(p));
+        const saleObs = v2FijaPed || poolT.some(pedia)
+          ? null
+          : asArr(asM.obs).filter((p) => pedia(p) && perfil(p.id).rotar !== "no" && quedanT(p)).sort((a, b) => nivelPed(perfil(b.id)) - nivelPed(perfil(a.id)))[0] || null;
+        // rotar = no: siguen por la tarde en su puesto de la mañana
         for (const post of POSTS) {
           for (const p of asArr(asM[post])) {
-            if (perfil(p.id).rotar === "no" && tardeTodos.some((x) => x.id === p.id)) {
-              poner(asT, post, { ...p, motivo: "no rota a las 15 h: sigue en su puesto" });
+            if (saleObs && p.id === saleObs.id) continue;
+            const sinRotar = perfil(p.id).rotar === "no" || post === "obs";
+            if (sinRotar && quedanT(p)) {
+              const motivoQuieto = post === "obs" && perfil(p.id).rotar !== "no" ? "observación: no rota a las 15 h (conoce a los pacientes)" : "no rota a las 15 h: sigue en su puesto";
+              poner(asT, post, { ...p, motivo: motivoQuieto });
               anotar(p.id, post);
               poolT = poolT.filter((x) => x.id !== p.id);
             }
           }
+        }
+        if (saleObs) {
+          poner(asT, "v2", { ...saleObs, motivo: "pediatría: V2 necesita especialista (sale de observación)" });
+          anotar(saleObs.id, "v2");
+          poolT = poolT.filter((x) => x.id !== saleObs.id);
         }
         // T1 y T2 rotan: quien hizo triage por la mañana no repite por la tarde
         const exTri = [asM.tri1, asM.tri2].filter(Boolean).map((x) => x.id);
@@ -407,7 +442,8 @@
       const turnoClave = modoNoche ? "N" : "D";
       for (const t of tareasCfg) {
         if (t.turno !== turnoClave) continue;
-        const etiqueta = `${escaparHTML(t.icono)} <b>${escaparHTML(t.nombre)}`;
+        const sufijo = t.personas && !modoNoche && t.franja === "M" ? " (mañana)" : t.personas && !modoNoche && t.franja === "T" ? " (tarde)" : "";
+        const etiqueta = `${escaparHTML(t.icono)} <b>${escaparHTML(t.nombre + sufijo)}`;
         if (t.tipo === "caducidad") {
           if (t.activa !== false && d + 1 === new Date(year, month, 0).getDate() - (month % 3)) {
             tareas.push(`${etiqueta}</b>`);
@@ -420,9 +456,12 @@
           // ese día (se guarda en el histórico como tarea_<id> / tareaDisp_<id>).
           const kE = `tarea_${t.id}`;
           const kD = `tareaDisp_${t.id}`;
-          working.forEach((p) => (h(p.id)[kD] = (h(p.id)[kD] || 0) + 1));
+          // Franja: "M" solo entre quien trabaja por la mañana; "T" solo por la tarde (solo turno diurno)
+          const enFranja = !modoNoche && t.franja === "M" ? working.filter((p) => p.franja !== "T")
+            : !modoNoche && t.franja === "T" ? working.filter((p) => p.franja !== "M") : working;
+          enFranja.forEach((p) => (h(p.id)[kD] = (h(p.id)[kD] || 0) + 1));
           const tasaT = (p) => (h(p.id)[kE] || 0) / Math.max(1, h(p.id)[kD]);
-          const elegidos = [...working]
+          const elegidos = [...enFranja]
             .sort((a, b) => tasaT(a) - tasaT(b) || hash01(`${a.id}|${ctx}|${t.id}`) - hash01(`${b.id}|${ctx}|${t.id}`))
             .slice(0, t.personas);
           elegidos.forEach((p) => (h(p.id)[kE] = (h(p.id)[kE] || 0) + 1));
@@ -531,8 +570,10 @@
           if (t.tipo === "caducidad") return { ...r, tipo: "caducidad", activa: t.activa !== false };
           r.dias = Array.isArray(t.dias) ? t.dias.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6) : [];
           if (t.personas) r.personas = Math.max(1, Math.min(6, parseInt(t.personas, 10) || 1));
+          if (t.franja) r.franja = t.franja;
           return r;
         });
+      tareasCfg = migrarTareas(tareasCfg); // copias de versiones anteriores (farmacia, carro del viernes)
     }
     return { ok: true, datos: { masterStaff, historialMeses, tareasCfg } };
   }
@@ -578,7 +619,7 @@
   }
 
   return {
-    VERANO_MESES, MINIMOS, TAREAS_DEFECTO, POSTS,
+    VERANO_MESES, MINIMOS, TAREAS_DEFECTO, FRANJAS_TAREA, migrarTareas, POSTS,
     esVerano, minimosNoche, clasificarTurno, minimizarCodigo, nombreCorto, nombresCortos, faltaAptitud,
     escaparHTML, pasosMinimos, generarMes, sumarHistorial, validarCopia, validarImport,
   };

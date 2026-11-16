@@ -133,7 +133,7 @@ const ok = (cond, msg) => {
   await app.importar();
   ok(/fallo simulado/.test(els.status.textContent), "error del extractor llega al usuario");
 
-  // 5) Impresión: diurno y noche en un solo documento, y pie "Hecho por Protocolovital.es"
+  // 5) Impresión: diurno y noche en un solo documento, y pie "Hecho por Protocolovital.es de Dan Chojrin"
   respuestaExtractor = { exito: true, personal, grupos: {}, homonimos: [], esperados: 13, cargados: 13, mes_num: 11, anio: 2026 };
   await app.importar();
   app.generar();
@@ -144,9 +144,10 @@ const ok = (cond, msg) => {
   ok(imp && /MAÑANA \/ TARDE/.test(imp.print_payload.html) && /TURNO NOCHE/.test(imp.print_payload.html), "impresión: diurno y noche en el mismo documento");
   ok(imp && /salto-pagina/.test(imp.print_payload.html), "impresión: noche en hoja aparte");
   ok(llamadas.some((l) => l === "crear " + "print.html?type=payload") && !llamadas.some((l) => /payload_noche/.test(l)), "impresión: una sola pestaña");
-  const pie = "Hecho por Protocolovital.es";
+  const pie = "Hecho por ";
+  const enlace = 'href="https://protocolovital.es"';
   const fs2 = require("fs");
-  ok(fs2.readFileSync(RAIZ + "app.html", "utf8").includes(pie) && fs2.readFileSync(RAIZ + "print.html", "utf8").includes(pie), "pie en la app y en la impresión");
+  ok([RAIZ + "app.html", RAIZ + "print.html"].every((f) => { const h = fs2.readFileSync(f, "utf8"); return h.includes(pie) && h.includes(enlace) && h.includes("Dan Chojrin"); }), "pie con enlace a protocolovital.es en la app y en la impresión");
 
   // 6) Tareas: la configuración antigua se migra al arrancar y el selector de franja aparece
   ok(!app.tareasCfg.some((t) => /Farmacia/.test(t.nombre)), "arranque: sin tareas de farmacia");
